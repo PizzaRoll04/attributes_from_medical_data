@@ -8,17 +8,18 @@ activations = {
     "leakyrelu": nn.LeakyReLU(),
 }
 
-class MLP(nn.Modules):
+
+class MLP(nn.Module):
     def __init__(
-            self, 
-            dim_input, 
-            dim_output, 
-            dims_hidden=[256, 128, 64], 
-            activation="relu", 
-            dropout = 0.0,
-            use_batchnorm=False,
-            use_layernorm=False
-        ):
+        self,
+        dim_input,
+        dim_output,
+        dims_hidden=[256, 128, 64],
+        activation="relu",
+        dropout=0.0,
+        use_batchnorm=False,
+        use_layernorm=False,
+    ):
         super().__init__()
 
         activation = activations[activation.lower()]
@@ -32,7 +33,7 @@ class MLP(nn.Modules):
                 layers.append(nn.BatchNorm1d(dim_hidden))
             if use_layernorm:
                 layers.append(nn.LayerNorm(dim_hidden))
-        
+
             layers.append(activation)
 
             if dropout > 0:
