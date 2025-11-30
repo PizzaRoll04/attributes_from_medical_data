@@ -22,6 +22,8 @@ class MLP(nn.Module):
     ):
         super().__init__()
 
+        self.dims_hidden = dims_hidden
+
         activation = activations[activation.lower()]
         layers = []
         prev = dim_input

@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument(
         "--num_epochs", type=int, default=30, help="Number of epochs to train"
     )
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
     parser.add_argument(
         "--target_sensitive_field",
         type=str,
@@ -38,14 +39,16 @@ def parse_args():
         type=str,
         help="Path to a pretrained model to use to bootstrap training",
     )
+    parser.add_argument(
+        "--hidden_dims",
+        type=int,
+        nargs="*",
+        default=[256, 128, 64],
+        help="Hidden layer sizes for the MLP probe. "
+        "Example: --hidden_dims 256 128 64. "
+        "Empty → linear probe.",
+    )
     return parser.parse_args()
-
-
-# nih_dataset = xrv.datasets.NIH_Dataset(
-#     imgpath="/path/to/images/",
-#     csvpath="/path/to/Data_Entry_2017.csv",
-#     transform=None,
-# )
 
 
 if __name__ == "__main__":
@@ -55,6 +58,10 @@ if __name__ == "__main__":
     dir_out.mkdir(parents=True, exist_ok=True)
     assert dir_out.exists() == True
 
+    hidden_dims = args.hidden_dims
+    path_model = args.path_model
+    lr = args.lr
+
     num_epochs = args.num_epochs
     device = torch.device(
         "cuda"
@@ -62,7 +69,6 @@ if __name__ == "__main__":
         else "mps" if torch.mps.is_available() else "cpu"
     )
     target = args.target_sensitive_field
-    is_classification = target == "gender"
 
     transforms = torchvision.transforms.Compose(
         [
@@ -93,10 +99,25 @@ if __name__ == "__main__":
 
     backbone = CXRBackbone(frozen=True)
     backbone.to(device)
-    probe = MLP(backbone.feature_dim, 1)
-    probe.to(device)
-    optimizer = torch.optim.Adam(probe.parameters(), lr=1e-3)
+    if path_model is not None:
+        assert Path(path_model).exists()
+        state_probe = torch.load(path_model, map_location="cpu")
+        target = state_probe["target"]
+        probe = MLP(
+            state_probe["feature_dim"],
+            1,
+            dims_hidden=state_probe["hidden_dims"],
+        )
+        probe.load_state_dict(state_probe["probe_state_dict"])
+        probe.to(device)
+        optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
+        optimizer.load_state_dict(state_probe["optimizer_state_dict"])
+    else:
+        probe = MLP(backbone.feature_dim, 1, dims_hidden=hidden_dims)
+        probe.to(device)
+        optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
 
+    is_classification = target == "gender"
     losses_train, losses_val = [], []  # per epoch
     metrics_train, metrics_val = [], []  # per epoch
     for epoch in range(num_epochs):
@@ -163,7 +184,8 @@ if __name__ == "__main__":
                     "probe_state_dict": probe.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "feature_dim": backbone.feature_dim,
-                    "target": args.target_sensitive_field,
+                    "target": target,
+                    "hidden_dims": probe.dims_hidden,
                 },
                 path_save,
             )
@@ -238,7 +260,8 @@ if __name__ == "__main__":
             "probe_state_dict": probe.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "feature_dim": backbone.feature_dim,
-            "target": args.target_sensitive_field,
+            "target": target,
+            "hidden_dims": probe.dims_hidden,
         },
         path_save,
     )
